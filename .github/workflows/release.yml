@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Set version from tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+
+      - name: Read tag message as release notes
+        run: |
+          {
+            echo "NOTES<<EOF"
+            git tag -l --format='%(contents)' "$TAG"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          body: ${{ env.NOTES }}
+          files: |
+            main.js
+            manifest.json

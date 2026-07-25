@@ -1,0 +1,57 @@
+# Postgres Sync
+
+Sync your Obsidian vault across devices using a self-hosted Postgres database instead of Obsidian Sync, iCloud, or a CouchDB setup. Every note also gets embedded, so the same table doubles as a semantic search index you can query from outside Obsidian.
+
+## What you need
+
+- A Postgres instance (with the `pgvector` extension available) reachable from every device you want to sync, fronted by [PostgREST](https://postgrest.org/) - Obsidian mobile can't open a raw database connection, so PostgREST is what actually speaks HTTP to the plugin.
+- An embedding server that speaks the llama.cpp `/embedding` endpoint, also reachable from every device. Point it at any embedding model you like; 768-dim models are the default assumption in `sql/schema.sql`, but you can change the `embedding` column's dimension to match whatever you run (do this before first use - see the comment in that file).
+- The schema in `sql/schema.sql` applied to your Postgres database, with a real API key set in `app_settings.bearer_token`, and PostgREST configured to use it (see below).
+
+Obsidian Sync, CouchDB, Syncthing - none of that is needed. This plugin talks to PostgREST directly over HTTP or HTTPS from inside Obsidian, so it works on desktop and mobile.
+
+## Setting up the backend
+
+1. Create a Postgres database and run `sql/schema.sql` against it:
+   ```bash
+   psql "postgres://user:pass@your-host:5432/your-db" -f sql/schema.sql
+   ```
+2. Set a real API key (the seeded default is `change-me`, don't leave it) and a login password for the `authenticator` role:
+   ```sql
+   update app_settings set bearer_token = 'a long random key of your choosing';
+   alter role authenticator with login password 'a real password';
+   ```
+3. Run PostgREST pointed at the same database, connecting as `authenticator`, with:
+   - `db-anon-role = web_anon`
+   - `db-pre-request = public.check_bearer_token`
+
+   The plugin sends its key as an `X-Api-Key` header, not `Authorization` - PostgREST reserves `Authorization` for its own JWT handling, so a custom header is what `check_bearer_token()` actually checks.
+
+   Don't set PostgREST's `max-rows` below 100, or the plugin's pull (which pages in batches of 100) will silently stop early.
+
+## Install the plugin
+
+Manually:
+
+1. Download `main.js` and `manifest.json` from the latest release.
+2. Drop them into `<your vault>/.obsidian/plugins/postgres-sync/`.
+3. Enable community plugins in Obsidian, then enable "Postgres Sync".
+
+## Setup
+
+Open the plugin settings and fill in:
+
+- **PostgREST URL** - your PostgREST instance's address.
+- **API key** - the key you set in `app_settings.bearer_token`.
+- **Embedding server URL** - your llama.cpp embedding server's address.
+- **Embed API key** - optional, only needed if your embedding server requires auth.
+
+Do this on every device you want synced, pointing at the same PostgREST instance. First sync on a new device, run the "Pull changes from Postgres now" command to pull everything down.
+
+## How sync works, briefly
+
+Last-write-wins by modification time. No conflict resolution beyond that, so if you edit the same note offline on two devices at once, whichever save lands later wins. Fine for a single person across a few devices; not built for real-time collaborative editing.
+
+## License
+
+MIT

@@ -1,0 +1,20 @@
+{
+  "name": "obsidian-postgres-sync",
+  "version": "0.1.0",
+  "description": "Syncs an Obsidian vault to Postgres (via PostgREST) instead of Obsidian Sync/CouchDB",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lanjak/obsidian-postgres-sync.git"
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.0"
+  }
+}
