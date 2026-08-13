@@ -8,6 +8,7 @@ export interface QdrantSyncSettings {
   embedApiKey: string;
   pullIntervalSeconds: number;
   lastSyncCursor: number;
+  lastSyncRevision: number;
 }
 
 export const DEFAULT_SETTINGS: QdrantSyncSettings = {
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: QdrantSyncSettings = {
   embedApiKey: "",
   pullIntervalSeconds: 30,
   lastSyncCursor: 0,
+  lastSyncRevision: 0,
 };
 
 export class QdrantSyncSettingTab extends PluginSettingTab {
@@ -66,8 +68,9 @@ export class QdrantSyncSettingTab extends PluginSettingTab {
         desc: "Reset the sync cursor to 0 and re-pull everything on next interval - use if this device missed changes",
         render: (setting) => {
           setting.addButton((btn) =>
-            btn.setButtonText("Reset cursor").onClick(async () => {
+            btn.setButtonText("Reset Cursor").onClick(async () => {
               this.plugin.settings.lastSyncCursor = 0;
+              this.plugin.settings.lastSyncRevision = 0;
               await this.plugin.saveSettings();
             }),
           );

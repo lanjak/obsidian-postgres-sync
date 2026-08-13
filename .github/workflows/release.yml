@@ -22,10 +22,28 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
-
       - name: Set version from tag
         run: echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+
+      - name: Verify release versions
+        run: |
+          node - <<'NODE'
+          const tag = process.env.TAG;
+          const pkg = require('./package.json');
+          const manifest = require('./manifest.json');
+          const versions = require('./versions.json');
+          if (pkg.version !== tag || manifest.version !== tag || versions[tag] !== manifest.minAppVersion) {
+            throw new Error(`Tag ${tag} does not match package.json, manifest.json, and versions.json`);
+          }
+          NODE
+
+      - run: npm test
+
+      - run: npm run typecheck
+
+      - run: npm run validate:obsidian
+
+      - run: npm run build
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
@@ -33,6 +51,7 @@ jobs:
           subject-path: |
             main.js
             manifest.json
+            sql/migrations/0.1.1-sync-revision.sql
 
       - name: Read tag message as release notes
         run: |
@@ -51,3 +70,4 @@ jobs:
           files: |
             main.js
             manifest.json
+            sql/migrations/0.1.1-sync-revision.sql

@@ -1,4 +1,5 @@
 import { requestUrl } from "obsidian";
+import { collectRevisionPages, revisionPageQuery } from "./recovery";
 
 export interface NotePayload {
   path: string;
@@ -11,11 +12,13 @@ export interface NotePayload {
 
 export interface NoteRow {
   id: string;
+  syncRevision: number;
   payload: NotePayload;
 }
 
 interface NoteRowJson {
   id: string;
+  sync_revision: number;
   path: string;
   content: string;
   content_hash: string;
@@ -27,6 +30,7 @@ interface NoteRowJson {
 function rowToNoteRow(row: NoteRowJson): NoteRow {
   return {
     id: row.id,
+    syncRevision: row.sync_revision,
     payload: {
       path: row.path,
       content: row.content,
@@ -112,30 +116,40 @@ export async function upsertNote(settings: PostgrestSettings, id: string, vector
   throwOnError(res, `upsert ${payload.path}`);
 }
 
-/** Page through every row with mtime > sinceMs, ordered so pagination is stable even when many rows share an mtime. */
-export async function scrollChangedSince(settings: PostgrestSettings, sinceMs: number): Promise<NoteRow[]> {
-  const rows: NoteRow[] = [];
+export interface ChangedRows {
+  rows: NoteRow[];
+  highWaterRevision: number;
+}
+
+/** Page through a bounded revision snapshot with keyset pagination. */
+export async function scrollChangedSince(settings: PostgrestSettings, sinceRevision: number): Promise<ChangedRows> {
+  const highWaterResponse = await requestUrl({
+    url: `${settings.postgrestUrl}/notes?order=sync_revision.desc&limit=1&select=sync_revision`,
+    method: "GET",
+    headers: headers(settings),
+    throw: false,
+  });
+  throwOnError(highWaterResponse, "read revision high-water mark");
+  const highWaterRows = highWaterResponse.json as Array<{ sync_revision: number }>;
+  const highWaterRevision = highWaterRows[0]?.sync_revision ?? sinceRevision;
   const limit = 100;
-  let offset = 0;
-  for (;;) {
+  const rows = await collectRevisionPages(sinceRevision, highWaterRevision, limit, async (afterRevision, highWater, pageLimit) => {
     const res = await requestUrl({
-      url: `${settings.postgrestUrl}/notes?mtime=gt.${sinceMs}&order=mtime.asc,id.asc&limit=${limit}&offset=${offset}&select=id,path,content,content_hash,mtime,size,deleted`,
+      url: `${settings.postgrestUrl}/notes?${revisionPageQuery(afterRevision, highWater, pageLimit)}`,
       method: "GET",
       headers: headers(settings),
       throw: false,
     });
     throwOnError(res, "scroll changed-since");
     const page = res.json as NoteRowJson[];
-    rows.push(...page.map(rowToNoteRow));
-    if (page.length < limit) break;
-    offset += limit;
-  }
-  return rows;
+    return page.map(rowToNoteRow);
+  });
+  return { rows, highWaterRevision };
 }
 
 export async function getNoteByPath(settings: PostgrestSettings, path: string): Promise<NoteRow | undefined> {
   const res = await requestUrl({
-    url: `${settings.postgrestUrl}/notes?path=eq.${encodeURIComponent(path)}&limit=1&select=id,path,content,content_hash,mtime,size,deleted`,
+    url: `${settings.postgrestUrl}/notes?path=eq.${encodeURIComponent(path)}&limit=1&select=id,sync_revision,path,content,content_hash,mtime,size,deleted`,
     method: "GET",
     headers: headers(settings),
     throw: false,

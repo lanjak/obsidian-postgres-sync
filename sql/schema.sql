@@ -7,6 +7,8 @@
 
 create extension if not exists vector;
 
+create sequence if not exists notes_sync_revision_seq;
+
 -- Single-row config table holding the API key the plugin must send.
 -- Set your key with: update app_settings set bearer_token = 'your-long-random-key';
 create table if not exists app_settings (
@@ -36,10 +38,42 @@ create table if not exists notes (
   mtime bigint not null,
   size integer not null default 0,
   deleted boolean not null default false,
+  sync_revision bigint,
   embedding vector(768)
 );
 
+alter table notes add column if not exists sync_revision bigint;
+
+update notes
+set sync_revision = nextval('public.notes_sync_revision_seq'::regclass)
+where sync_revision is null;
+
+select setval(
+  'public.notes_sync_revision_seq'::regclass,
+  greatest(coalesce(max(sync_revision), 0), 1),
+  max(sync_revision) is not null
+)
+from notes;
+
+create or replace function public.assign_note_sync_revision() returns trigger as $$
+begin
+  new.sync_revision := nextval('public.notes_sync_revision_seq'::regclass);
+  return new;
+end;
+$$ language plpgsql security definer set search_path = pg_catalog;
+
+alter function public.assign_note_sync_revision() owner to postgres;
+revoke execute on function public.assign_note_sync_revision() from public;
+
+drop trigger if exists notes_assign_sync_revision on notes;
+create trigger notes_assign_sync_revision
+before insert or update on notes
+for each row execute function public.assign_note_sync_revision();
+
+alter table notes alter column sync_revision set not null;
+
 create index if not exists notes_mtime_idx on notes (mtime);
+create unique index if not exists notes_sync_revision_idx on notes (sync_revision);
 create unique index if not exists notes_path_idx on notes (path);
 
 -- Roles.

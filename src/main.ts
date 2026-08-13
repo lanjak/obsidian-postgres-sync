@@ -35,7 +35,7 @@ export default class PostgresSyncPlugin extends Plugin {
 
     this.addCommand({
       id: "pull-now",
-      name: "Pull changes from Postgres now",
+      name: "Pull changes from postgres now",
       callback: () => {
         void this.sync.pull().then(() => new Notice("Postgres sync: pull complete"));
       },
@@ -44,7 +44,7 @@ export default class PostgresSyncPlugin extends Plugin {
     if (this.sync.isConfigured()) {
       this.sync.startPulling();
     } else {
-      new Notice("Postgres Sync: configure the plugin in Settings to start syncing");
+      new Notice("Postgres sync: configure the plugin in settings to start syncing");
     }
   }
 
