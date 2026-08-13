@@ -51,7 +51,6 @@ jobs:
           subject-path: |
             main.js
             manifest.json
-            sql/migrations/0.1.1-sync-revision.sql
 
       - name: Read tag message as release notes
         run: |
@@ -70,4 +69,3 @@ jobs:
           files: |
             main.js
             manifest.json
-            sql/migrations/0.1.1-sync-revision.sql

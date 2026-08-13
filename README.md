@@ -31,7 +31,7 @@ Obsidian Sync, CouchDB, Syncthing - none of that is needed. This plugin talks to
 
 ### Upgrade an existing backend to 0.1.1
 
-Version 0.1.1 needs the server revision column in `sql/migrations/0.1.1-sync-revision.sql`. Apply this migration before you install the 0.1.1 plugin on any device.
+Version 0.1.1 needs the server revision column in [`sql/migrations/0.1.1-sync-revision.sql`](https://github.com/lanjak/obsidian-postgres-sync/blob/0.1.1/sql/migrations/0.1.1-sync-revision.sql). Apply this migration before you install the 0.1.1 plugin on any device.
 
 Stop PostgREST and schedule a short maintenance window. The migration backfills existing rows and builds an index, so it can block reads and writes while it runs. Apply it as the Postgres owner, then start PostgREST again:
 
