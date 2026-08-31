@@ -1,4 +1,5 @@
 import { requestUrl } from "obsidian";
+import { writeNoteConditionally } from "./conditional-write";
 import { collectRevisionPages, revisionPageQuery } from "./recovery";
 
 export interface NotePayload {
@@ -114,6 +115,17 @@ export async function upsertNote(settings: PostgrestSettings, id: string, vector
     throw: false,
   });
   throwOnError(res, `upsert ${payload.path}`);
+}
+
+export async function upsertNoteIfUnchanged(
+  settings: PostgrestSettings,
+  id: string,
+  vector: number[] | null,
+  payload: NotePayload,
+  expectedRevision: number | undefined,
+): Promise<boolean> {
+  const result = await writeNoteConditionally(settings, id, vector, payload, expectedRevision, requestUrl);
+  return result === "applied";
 }
 
 export interface ChangedRows {

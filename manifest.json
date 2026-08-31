@@ -1,7 +1,7 @@
 {
   "id": "postgres-sync",
   "name": "Postgres Sync",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.13.0",
   "description": "Syncs Markdown notes through PostgREST and embeds every note for semantic search from external tools.",
   "author": "rufi",

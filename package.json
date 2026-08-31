@@ -1,6 +1,6 @@
 {
   "name": "obsidian-postgres-sync",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Syncs an Obsidian vault to Postgres (via PostgREST) instead of Obsidian Sync/CouchDB",
   "license": "MIT",
   "repository": {

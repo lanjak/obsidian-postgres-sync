@@ -1,6 +1,7 @@
 import { Notice, TFile, TFolder } from "obsidian";
 import type PostgresSyncPlugin from "./main";
-import { embed, sha256, pathToId, upsertNote, scrollChangedSince, getNoteByPath } from "./postgrest";
+import { embed, sha256, pathToId, upsertNote, upsertNoteIfUnchanged, scrollChangedSince, getNoteByPath } from "./postgrest";
+import { checkPushSnapshot, readPushSnapshot } from "./push-snapshot";
 import {
   reconciliationAction,
   SerialTaskQueue,
@@ -88,33 +89,62 @@ export class SyncEngine {
         return;
       }
 
-      const content = await this.plugin.app.vault.read(file);
-      const contentHash = await sha256(content);
+      const snapshot = await readPushSnapshot(file, (target) => this.plugin.app.vault.read(target), sha256);
+      const checkSnapshot = () =>
+        checkPushSnapshot(
+          snapshot,
+          async () => {
+            const currentFile = this.plugin.app.vault.getAbstractFileByPath(path);
+            return currentFile instanceof TFile ? this.plugin.app.vault.read(currentFile) : undefined;
+          },
+          async () => {
+            const row = await getNoteByPath(this.settings, snapshot.path);
+            return row ? { ...row.payload, syncRevision: row.syncRevision } : undefined;
+          },
+        );
 
-      const remote = await getNoteByPath(this.settings, file.path);
-      if (remote && remote.payload.contentHash === contentHash && !remote.payload.deleted) {
+      const beforeEmbed = await checkSnapshot();
+      if (beforeEmbed.decision === "missing" || beforeEmbed.decision === "none") {
         success = true;
-        return; // no real change (e.g. our own pull-triggered write firing a modify event)
+        return;
       }
-
-      if (remote && remote.payload.mtime >= file.stat.mtime) {
-        await this.applyRemoteChange(remote.payload);
+      if (beforeEmbed.decision === "retry") {
+        this.workQueue.markDirty(path);
+        success = true;
+        return;
+      }
+      if (beforeEmbed.decision === "pull" && beforeEmbed.remote) {
+        await this.applyRemoteChange(beforeEmbed.remote);
         success = true;
         return;
       }
 
-      const vector = await embed(this.settings, embeddingInput(content), "search_document");
-      const id = await pathToId(file.path);
-      await upsertNote(this.settings, id, vector, {
-        path: file.path,
-        content,
-        contentHash,
-        // Use the accepted write time so devices whose pull cursor is already
-        // newer than an old local file still discover this new database row.
-        mtime: Date.now(),
-        size: content.length,
-        deleted: false,
-      });
+      const vector = await embed(this.settings, embeddingInput(snapshot.content), "search_document");
+      const id = await pathToId(snapshot.path);
+      const beforeUpload = await checkSnapshot();
+      if (beforeUpload.decision === "missing" || beforeUpload.decision === "none") {
+        success = true;
+        return;
+      }
+      if (beforeUpload.decision === "retry") {
+        this.workQueue.markDirty(path);
+        success = true;
+        return;
+      }
+      if (beforeUpload.decision === "pull" && beforeUpload.remote) {
+        await this.applyRemoteChange(beforeUpload.remote);
+        success = true;
+        return;
+      }
+
+      const applied = await upsertNoteIfUnchanged(
+        this.settings,
+        id,
+        vector,
+        { ...snapshot, deleted: false },
+        beforeUpload.remote?.syncRevision,
+      );
+      if (!applied) this.workQueue.markDirty(path);
       success = true;
     } catch (e) {
       console.error("postgres-sync: push failed for", path, e);
