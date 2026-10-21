@@ -76,6 +76,11 @@ create index if not exists notes_mtime_idx on notes (mtime);
 create unique index if not exists notes_sync_revision_idx on notes (sync_revision);
 create unique index if not exists notes_path_idx on notes (path);
 
+-- HNSW index for cosine-similarity search (used by tools that query this table
+-- directly over SQL, e.g. notes-axi - the plugin itself never searches, only
+-- syncs, but the same table doubles as the vault's semantic search index).
+create index if not exists notes_embedding_idx on notes using hnsw (embedding vector_cosine_ops);
+
 -- Roles.
 -- web_anon: what PostgREST connects requests as by default. No grants on
 --   table data at all, so a dropped or misconfigured db-pre-request setting
@@ -114,6 +119,21 @@ grant select, insert, update, delete on notes to note_writer;
 -- Set a real login password for the role PostgREST connects as, if your
 -- provisioning doesn't already manage this some other way:
 -- alter role authenticator with login password 'set-a-real-password-here';
+
+-- Optional: a login role for trusted local/network tools (e.g. notes-axi)
+-- that connect directly over the Postgres wire protocol instead of through
+-- PostgREST - skip this if nothing needs direct SQL access. Member of
+-- note_writer like authenticator, but with its own login and password so
+-- it can be rotated/revoked independently.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'notes_cli') then
+    create role notes_cli nologin;
+  end if;
+end
+$$;
+grant note_writer to notes_cli;
+-- alter role notes_cli with login password 'set-a-real-password-here';
 
 -- Private schema for auth internals - NOT listed in PostgREST's db-schemas config,
 -- so nothing in here is ever routable as a /rpc/<function> HTTP endpoint, even if
@@ -158,3 +178,20 @@ $$ language plpgsql;
 
 revoke execute on function public.check_bearer_token() from public;
 grant execute on function public.check_bearer_token() to web_anon;
+
+-- Semantic search for tools over PostgREST (see sql/migrations/0.2.0-search-notes.sql).
+create or replace function public.search_notes(query_embedding vector(768), match_count integer default 10)
+returns table (id uuid, path text, content text, content_hash text, mtime bigint, size integer, deleted boolean, score double precision)
+language sql stable
+as $$
+  select n.id, n.path, n.content, n.content_hash, n.mtime, n.size, n.deleted,
+         1 - (n.embedding <=> query_embedding) as score
+  from public.notes n
+  where not n.deleted and n.embedding is not null
+  order by n.embedding <=> query_embedding
+  limit least(greatest(coalesce(match_count, 10), 1), 100)
+$$;
+
+revoke execute on function public.search_notes(vector, integer) from public;
+grant execute on function public.search_notes(vector, integer) to note_writer;
+
