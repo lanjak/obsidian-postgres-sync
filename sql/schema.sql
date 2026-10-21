@@ -76,9 +76,9 @@ create index if not exists notes_mtime_idx on notes (mtime);
 create unique index if not exists notes_sync_revision_idx on notes (sync_revision);
 create unique index if not exists notes_path_idx on notes (path);
 
--- HNSW index for cosine-similarity search (used by tools that query this table
--- directly over SQL, e.g. notes-axi - the plugin itself never searches, only
--- syncs, but the same table doubles as the vault's semantic search index).
+-- HNSW index for cosine-similarity search (used by search_notes - the plugin
+-- itself never searches, only syncs, but the same table doubles as the vault's
+-- semantic search index).
 create index if not exists notes_embedding_idx on notes using hnsw (embedding vector_cosine_ops);
 
 -- Roles.
@@ -119,21 +119,6 @@ grant select, insert, update, delete on notes to note_writer;
 -- Set a real login password for the role PostgREST connects as, if your
 -- provisioning doesn't already manage this some other way:
 -- alter role authenticator with login password 'set-a-real-password-here';
-
--- Optional: a login role for trusted local/network tools (e.g. notes-axi)
--- that connect directly over the Postgres wire protocol instead of through
--- PostgREST - skip this if nothing needs direct SQL access. Member of
--- note_writer like authenticator, but with its own login and password so
--- it can be rotated/revoked independently.
-do $$
-begin
-  if not exists (select 1 from pg_roles where rolname = 'notes_cli') then
-    create role notes_cli nologin;
-  end if;
-end
-$$;
-grant note_writer to notes_cli;
--- alter role notes_cli with login password 'set-a-real-password-here';
 
 -- Private schema for auth internals - NOT listed in PostgREST's db-schemas config,
 -- so nothing in here is ever routable as a /rpc/<function> HTTP endpoint, even if
